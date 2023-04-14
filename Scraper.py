@@ -1,6 +1,5 @@
 
 import requests
-from bs4 import BeautifulSoup
 import json
 from multiprocessing import Process, Value, Lock
 from dataclasses import dataclass
@@ -11,7 +10,6 @@ class Scraper:
   OUT_FILE : str
   IN_FILE : str
   MAX_THREADS : int = 1
-  SOUP_TARGET : dict = {"class" : "BNeawe iBp4i AP7Wnd"}
   COUNTRIES_DICT : dict
 
   def __init__(self, outfile :  str, infile : str, maxthreads : int):
@@ -19,21 +17,18 @@ class Scraper:
     self.IN_FILE     = infile
     self.MAX_THREADS = maxthreads
 
-  def scrape(self,country, city, max_threads_counter, mutex) -> None:
-      res = requests.get(f'https://www.google.com/search?q=weather+{city}+{country}+°C&hl=en')
-      soup = BeautifulSoup(res.content, 'html.parser') 
-
+  def scrape(self,country, max_threads_counter, mutex) -> None:
+      res = requests.post("https://countriesnow.space/api/v0.1/countries/capital", data={"country" : country})
       try:
-        temp = soup.find("div", attrs=self.SOUP_TARGET).text.split("°")[0]
-        info = int(temp)
+        info = json.loads(res.content)["data"]["capital"]
       except:
         info = "#"
 
       finally:
         with mutex :
           with open(self.OUT_FILE, 'a') as f:
-            print(f'{country}:{city}:{info}')
-            f.write(f'{country}:{city}:{info}\n')
+            print(f'{country}:{info}')
+            f.write(f'{country}:{info}\n')
 
         with max_threads_counter.get_lock():
           max_threads_counter.value  += 1
@@ -46,12 +41,11 @@ class Scraper:
   def start(self):
     mutex = Lock()
     max_threads_counter = Value('d', self.MAX_THREADS)
-    for country, cities in self.COUNTRIES_DICT.items():
-      for city in cities:
+    for country, _ in self.COUNTRIES_DICT.items():
         if max_threads_counter.value != 0 : 		
           max_threads_counter.value -= 1
 	
-          process = Process(target=self.scrape, args=(country, city, max_threads_counter, mutex)) 
+          process = Process(target=self.scrape, args=(country, max_threads_counter, mutex)) 
           process.start()
         while max_threads_counter.value == 0:
           continue
